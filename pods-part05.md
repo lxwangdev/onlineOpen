@@ -1,4 +1,4 @@
-# Pod Updates and Subresources (Part 05 of 10)
+# Pod Security, Resources, and Static Pods (Part 05 of 06)
 
 Source: https://kubernetes.io/docs/concepts/workloads/pods/
 License: CC BY 4.0 (Kubernetes documentation)
@@ -6,24 +6,49 @@ Retrieved: 2026-08-02
 
 ---
 
-## Pod update and replacement
+## Pod security settings
 
-As mentioned in the previous section, when the Pod template for a workload resource is changed, the controller creates new Pods based on the updated template instead of updating or patching the existing Pods.
+To set security constraints on Pods and containers, you use the `securityContext` field in the Pod specification. This field gives you granular control over what a Pod or individual containers can do. See [Advanced Pod Configuration](https://kubernetes.io/docs/concepts/workloads/pods/advanced-pod-config/) for more details.
 
-Kubernetes doesn't prevent you from managing Pods directly. It is possible to update some fields of a running Pod, in place. However, Pod update operations like [`patch`](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#patch-pod-v1-core), and [`replace`](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#replace-pod-v1-core) have some limitations:
+For basic security configuration, you should meet the Baseline Pod security standard and run containers as non-root. You can set simple security contexts:
 
-- Most of the metadata about a Pod is immutable. For example, you cannot change the `namespace`, `name`, `uid`, or `creationTimestamp` fields.
-- If the `metadata.deletionTimestamp` is set, no new entry can be added to the `metadata.finalizers` list.
-- Pod updates may not change fields other than `spec.containers[*].image`, `spec.initContainers[*].image`, `spec.activeDeadlineSeconds`, `spec.terminationGracePeriodSeconds`, `spec.tolerations` or `spec.schedulingGates`. For `spec.tolerations`, you can only add new entries.
-- When updating the `spec.activeDeadlineSeconds` field, two types of updates are allowed:
-  1. setting the unassigned field to a positive number;
-  2. updating the field from a positive number to a smaller, non-negative number.
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: security-context-demo
+spec:
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 3000
+    fsGroup: 2000
+  containers:
+  - name: sec-ctx-demo
+    image: busybox
+    command: ["sh", "-c", "sleep 1h"]
+```
 
-### Pod subresources
+For advanced security context configuration including capabilities, seccomp profiles, and detailed security options, see the [security concepts](https://kubernetes.io/docs/concepts/security/) section.
 
-The above update rules apply to regular pod updates, but other pod fields can be updated through *subresources*.
+- To learn about kernel-level security constraints that you can use, see [Linux kernel security constraints for Pods and containers](https://kubernetes.io/docs/concepts/security/linux-kernel-security-constraints/).
+- To learn more about the Pod security context, see [Configure a Security Context for a Pod or Container](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/).
 
-- **Resize:** The `resize` subresource allows container resources (`spec.containers[*].resources`) to be updated. See [Resize Container Resources](https://kubernetes.io/docs/tasks/configure-pod-container/resize-container-resources/) for more details.
-- **Ephemeral Containers:** The `ephemeralContainers` subresource allows [ephemeral containers](https://kubernetes.io/docs/concepts/workloads/pods/ephemeral-containers/) to be added to a Pod. See [Ephemeral Containers](https://kubernetes.io/docs/concepts/workloads/pods/ephemeral-containers/) for more details.
-- **Status:** The `status` subresource allows the pod status to be updated. This is typically only used by the Kubelet and other system controllers.
-- **Binding:** The `binding` subresource allows setting the pod's `spec.nodeName` via a `Binding` request. This is typically only used by the [scheduler](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-scheduler/).
+## Resource requests and limits
+
+When you specify a Pod, you can optionally specify how much of each resource a container needs. The most common resources to specify are CPU and memory (RAM).
+
+When you specify the resource *request* for containers in a Pod, the kube-scheduler uses this information to decide which node to place the Pod on. When you specify a resource *limit* for a container, the kubelet enforces those limits so that the running container is not allowed to use more of that resource than the limit you set.
+
+CPU limits are enforced by CPU throttling. When a container approaches its CPU limit, the kernel restricts its access to CPU. Memory limits are enforced by the kernel with out-of-memory (OOM) kills when a container exceeds its limit.
+
+> **Note:** Setting CPU limits involves a trade-off. CPU limits help prevent noisy neighbor problems where a single workload starves others on the same node. This is especially important in multi-tenant environments. However, CPU limits can cause throttling even when the node has spare CPU capacity, potentially degrading latency-sensitive workload performance. Whether to set CPU limits depends on your environment, workload characteristics, and isolation requirements.
+
+For details on resource units, enforcement behavior, and configuration examples, see [Resource Management for Pods and Containers](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/).
+
+## Static Pods
+
+*Static Pods* are managed directly by the kubelet daemon on a specific node, without the [API server](https://kubernetes.io/docs/concepts/architecture/#kube-apiserver) observing them. Whereas most Pods are managed by the control plane (for example, a [Deployment](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)), for static Pods, the kubelet directly supervises each static Pod (and restarts it if it fails).
+
+Static Pods are always bound to one [Kubelet](https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet) on a specific node. The main use for static Pods is to run a self-hosted control plane: in other words, using the kubelet to supervise the individual [control plane components](https://kubernetes.io/docs/concepts/architecture/#control-plane-components).
+
+For details, see [Static Pods](https://kubernetes.io/docs/concepts/workloads/pods/static-pods/).

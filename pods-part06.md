@@ -1,4 +1,4 @@
-# Pod Generation (Part 06 of 10)
+# Multi-container Pods and Probes (Part 06 of 06)
 
 Source: https://kubernetes.io/docs/concepts/workloads/pods/
 License: CC BY 4.0 (Kubernetes documentation)
@@ -6,35 +6,53 @@ Retrieved: 2026-08-02
 
 ---
 
-### Pod generation
+## Pods with multiple containers
 
-- The `metadata.generation` field is unique. It will be automatically set by the system such that new pods have a `metadata.generation` of 1, and every update to mutable fields in the pod's spec will increment the `metadata.generation` by 1.
+Pods are designed to support multiple cooperating processes (as containers) that form a cohesive unit of service. The containers in a Pod are automatically co-located and co-scheduled on the same physical or virtual machine in the cluster. The containers can share resources and dependencies, communicate with one another, and coordinate when and how they are terminated.
 
-> **FEATURE STATE: `Kubernetes v1.35 [stable]` (enabled by default) *(Feature Gate: PodObservedGenerationTracking)*
+Pods in a Kubernetes cluster are used in two main ways:
 
-- `observedGeneration` is a field that is captured in the `status` section of the Pod object. The Kubelet will set `status.observedGeneration` to track the pod state to the current pod status. The pod's `status.observedGeneration` will reflect the `metadata.generation` of the pod at the point that the pod status is being reported.
+- **Pods that run a single container**. The "one-container-per-Pod" model is the most common Kubernetes use case; in this case, you can think of a Pod as a wrapper around a single container; Kubernetes manages Pods rather than managing the containers directly.
+- **Pods that run multiple containers that need to work together**. A Pod can encapsulate an application composed of multiple co-located containers that are tightly coupled and need to share resources. These co-located containers form a single cohesive unit of service—for example, one container serving data stored in a shared volume to the public, while a separate [sidecar container](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/) refreshes or updates those files. The Pod wraps these containers, storage resources, and an ephemeral network identity together as a single unit.
 
-> **Note:** The `status.observedGeneration` field is managed by the kubelet and external controllers should **not** modify this field.
+For example, you might have a container that acts as a web server for files in a shared volume, and a separate [sidecar container](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/) that updates those files from a remote source, as in the following diagram:
 
-Different status fields may either be associated with the `metadata.generation` of the current sync loop, or with the `metadata.generation` of the previous sync loop. The key distinction is whether a change in the `spec` is reflected directly in the `status` or is an indirect result of a running process.
+![Pod creation diagram](https://kubernetes.io/images/docs/pod.svg)
 
-#### Direct Status Updates
+Some Pods have [init containers](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/) as well as [app containers](https://kubernetes.io/docs/reference/glossary/?all=true#term-app-container). By default, init containers run and complete before the app containers are started.
 
-For status fields where the allocated spec is directly reflected, the `observedGeneration` will be associated with the current `metadata.generation` (Generation N).
+You can also have [sidecar containers](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/) that provide auxiliary services to the main application Pod (for example: a service mesh).
 
-This behavior applies to:
+> **FEATURE STATE: `Kubernetes v1.33 [stable]` (enabled by default) *(Feature Gate: SidecarContainers)*
 
-- **Resize Status**: The status of a resource resize operation.
-- **Allocated Resources**: The resources allocated to the Pod after a resize.
-- **Ephemeral Containers**: When a new ephemeral container is added, and it is in `Waiting` state.
+Enabled by default, the `SidecarContainers` [feature gate](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/) allows you to specify `restartPolicy: Always` for init containers. Setting the `Always` restart policy ensures that the containers where you set it are treated as *sidecars* that are kept running during the entire lifetime of the Pod. Containers that you explicitly define as sidecar containers start up before the main application Pod and remain running until the Pod is shut down.
 
-#### Indirect Status Updates
+## Container probes
 
-For status fields that are an indirect result of running the spec, the `observedGeneration` will be associated with the `metadata.generation` of the previous sync loop (Generation N-1).
+A *probe* is a diagnostic performed periodically by the kubelet on a container. To perform a diagnostic, the kubelet can invoke different actions:
 
-This behavior applies to:
+- `ExecAction` (performed with the help of the container runtime)
+- `TCPSocketAction` (checked directly by the kubelet)
+- `HTTPGetAction` (checked directly by the kubelet)
 
-- **Container Image**: The `ContainerStatus.ImageID` reflects the image from the previous generation until the new image is pulled and the container is updated.
-- **Actual Resources**: During an in-progress resize, the actual resources in use still belong to the previous generation's request.
-- **Container state**: During an in-progress resize, with require restart policy reflects the previous generation's request.
-- **activeDeadlineSeconds** & **terminationGracePeriodSeconds** & **deletionTimestamp**: The effects of these fields on the Pod's status are a result of the previously observed specification.
+You can read more about [probes](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-probes) in the Pod Lifecycle documentation.
+
+## What's next
+
+- Learn about the [lifecycle of a Pod](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/).
+- Read about [PodDisruptionBudget](https://kubernetes.io/docs/concepts/workloads/pods/disruptions/) and how you can use it to manage application availability during disruptions.
+- Pod is a top-level resource in the Kubernetes REST API. The [Pod](https://kubernetes.io/docs/reference/kubernetes-api/core/pod-v1/) object definition describes the object in detail.
+- [The Distributed System Toolkit: Patterns for Composite Containers](https://kubernetes.io/blog/2015/06/the-distributed-system-toolkit-patterns/) explains common layouts for Pods with more than one container.
+- Read about [Pod topology spread constraints](https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/)
+- Read [Advanced Pod Configuration](https://kubernetes.io/docs/concepts/workloads/pods/advanced-pod-config/) to learn the topic in detail. That page covers aspects of Pod configuration beyond the essentials, including:
+  - PriorityClasses
+  - RuntimeClasses
+  - advanced ways to configure *scheduling*: the way that Kubernetes decides which node a Pod should run on.
+
+To understand the context for why Kubernetes wraps a common Pod API in other resources (such as [StatefulSets](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/) or [Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)), you can read about the prior art, including:
+
+- [Aurora](https://aurora.apache.org/documentation/latest/reference/configuration/#job-schema)
+- [Borg](https://research.google/pubs/large-scale-cluster-management-at-google-with-borg/)
+- [Marathon](https://github.com/d2iq-archive/marathon)
+- [Omega](https://research.google/pubs/pub41684/)
+- [Tupperware](https://engineering.fb.com/data-center-engineering/tupperware/).
